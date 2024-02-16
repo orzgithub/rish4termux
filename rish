@@ -1,0 +1,95 @@
+#!/data/data/com.termux/files/usr/bin/bash
+
+# This is a simple rish made for termux.
+
+help(){
+	cat << 'EOF'
+Usage: rish [options]
+
+Options:
+	-u, --shizuku	use Shizuku as the provider
+	-i, --sui	use sui as the provider (Default)
+	-c, --command COMMAND	Pass COMMAND to the invoked shell
+	-s, --shell SHELL	Use SHELL instead of the default /system/bin/sh
+	-h, --help	Show this help
+EOF
+}
+
+[ -z "$RISH_APPLICATION_ID" ] && export RISH_APPLICATION_ID=$TERMUX_APP__PACKAGE_NAME
+DEX_BASE_PATH=$TERMUX_APP__FILES_DIR/usr/etc/rish
+
+MODE=sui
+SHELL_ARG=''
+CMD_ARGS=''
+OTHER_ARGS=''
+WAITARG=none
+for arg in "$@"; do
+	if [[ ${WAITARG} == shell ]] then
+		SHELL_ARG="${arg}"
+		shift
+		WAITARG=none
+		continue
+	elif [[ ${WAITARG} == command ]] then
+		CMD_ARGS="${*}"
+		break
+	fi
+	case ${arg} in
+	-u | --shizuku)
+	    shift
+		if [[ -n "$MODESET" ]]; then
+			echo Only one provider can be used.
+			exit 1
+		fi
+		MODE=shizuku
+		MODESET=1 
+		;;
+	-i | --sui)
+	    shift
+		if [[ -n "$MODESET" ]]; then
+			echo Only one provider can be used.
+			exit 1
+		fi
+		MODE=sui
+		MODESET=1
+		;;
+	-h | --help)
+	    shift
+		help
+		exit 0
+		;;
+	-s | --shell)
+	    shift
+		WAITARG=shell
+		;;
+	-c | --command)
+	    shift
+		WAITARG=command
+		;;
+	*)
+	    OTHER_ARGS+=" ${arg}"
+	esac
+done
+
+unset MODESET
+
+if [[ $MODE == shizuku ]] then
+	DEX=$DEX_BASE_PATH/rish_shizuku.dex
+	BASE_CMD="/system/bin/app_process -Djava.class.path="$DEX" /system/bin --nice-name=rish rikka.shizuku.shell.ShizukuShellLoader"
+elif [[ $MODE == sui ]] then
+	DEX=$DEX_BASE_PATH/rish_sui.dex
+	BASE_CMD="/system/bin/app_process -Djava.class.path="$DEX" -Djava.library.path="$DEX_BASE_PATH" /system/bin --nice-name=rish rikka.sui.shell.Shell"
+fi
+
+if [[ ! -f $DEX ]] then
+	echo "Cannot find $DEX, maybe you have forgot to put it in the right place."
+fi
+if [[ -n $SHELL_ARG && -z $CMD_ARGS ]] then
+    FIN_ARGS="-c '${SHELL_ARG}'"
+elif  [[ -z $SHELL_ARG && -n $CMD_ARGS ]] then
+    FIN_ARGS="-c '${CMD_ARGS}'"
+elif  [[ -n $SHELL_ARG && -n $CMD_ARGS ]] then
+    FIN_ARGS="-c '${SHELL_ARG} -c ${CMD_ARGS}'"
+fi
+FIN_ARGS="${OTHER_ARGS} ${FIN_ARGS}"
+FIN_CMD="$BASE_CMD $FIN_ARGS"
+bash -c "${FIN_CMD}"
